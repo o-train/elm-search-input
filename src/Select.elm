@@ -1,4 +1,4 @@
-module Select exposing (Item, Model, Msg(..), OpenState(..), Search, Setters(..), basicInit, update, view)
+module Select exposing (Item, Model, Msg(..), OpenState(..), Search, Setters(..), basicInit, isOpen, update, view)
 
 import Browser.Dom
 import Debouncer.Basic as Debouncer
@@ -6,7 +6,7 @@ import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Html.Events.Extra exposing (onClickStopPropagation, onEnter)
-import Html.Keyed
+import Html.Extra
 import Icons.CloseCross
 import Icons.Search
 import RemoteData exposing (WebData)
@@ -14,11 +14,6 @@ import Select.KeyShortcutEvents
 import Select.OnClickOutsideAfterFocus
 import Svg.Attributes
 import Task
-
-
-
--- Comment
-{- Basic + Advanced -}
 
 
 type Direction
@@ -100,6 +95,7 @@ type Msg item
 type Setters item
     = Mode OpenState
     | Select (Item item)
+    | Deselect (Item item)
     | AutocompleteIndex Direction
     | SearchTerms String
     | SuggestedItems
@@ -127,6 +123,16 @@ update msg model =
 
         Set (Mode Opened) ->
             ( { model | mode = Opened }
+            , focusSearch model.label
+            )
+
+        Set (Select item) ->
+            ( { model | selected = Just item }
+            , Cmd.none
+            )
+
+        Set (Deselect item) ->
+            ( { model | selected = Nothing }
             , Cmd.none
             )
 
@@ -214,23 +220,34 @@ update msg model =
 
 view : Model a -> Html (Msg a)
 view model =
-    Html.Keyed.node "div"
-        ([ class "overflow-y-scroll z-10 md:pt-3 mb-8 md:mb-0 min-w-full md:min-w-auto"
-         , class "sm:max-w-sm md:min-h-80 md:max-h-92 lg:max-w-lg"
-         , attribute "data-role" "search-input-view"
-         ]
-            ++ Select.OnClickOutsideAfterFocus.withId (domId model.label) (Set (Mode Closed))
+    let
+        items =
+            model.search.terms
+                |> Maybe.map
+                    (\t ->
+                        if String.trim t /= "" then
+                            model.search.results
+
+                        else
+                            RemoteData.succeed model.search.items
+                    )
+                |> Maybe.withDefault (RemoteData.succeed model.search.items)
+    in
+    div
+        (class "elm-search-input-container"
+            :: Select.OnClickOutsideAfterFocus.withId (domId model.label) (Set (Mode Closed))
         )
-        [ ( "search-input-" ++ model.label, searchInputView model )
-        , ( "search-items", itemsView model.selected model.search.results model.autocompleteIndex )
+        [ searchInputView model
+        , selectedView model.selected
+        , itemsView model.minimumSearchTermsLength model.selected items model.autocompleteIndex
         ]
 
 
-itemsView : Maybe (Item item) -> WebData (Items item) -> Maybe Int -> Html (Msg item)
-itemsView selected webdataItems autocompleteIndex =
+itemsView : Int -> Maybe (Item item) -> WebData (Items item) -> Maybe Int -> Html (Msg item)
+itemsView min selected webdataItems autocompleteIndex =
     case webdataItems of
         RemoteData.NotAsked ->
-            span [ class "px-4 text-grey" ] [ text "Waiting for at least 2 letters..." ]
+            span [ class "px-4 text-grey" ] [ text <| "Waiting for at least " ++ String.fromInt min ++ " letters..." ]
 
         RemoteData.Loading ->
             span [ class "px-4 text-grey" ] [ text "Loading..." ]
@@ -248,15 +265,15 @@ itemsView selected webdataItems autocompleteIndex =
                 ]
                 -- Keyed Node
                 [ ul
-                    [ id "search-box-for-"
+                    [ id "select-item-for-"
                     , class "p-0 m-0 text-mt-grey-dark"
                     ]
-                    (List.indexedMap (displayItem selected autocompleteIndex) items)
+                    (List.indexedMap (itemView selected autocompleteIndex) items)
                 ]
 
 
-displayItem : Maybe (Item item) -> Maybe Int -> Int -> Item item -> Html (Msg item)
-displayItem selected autocompleteIndex index item =
+itemView : Maybe (Item item) -> Maybe Int -> Int -> Item item -> Html (Msg item)
+itemView selected autocompleteIndex index item =
     let
         isHighlighted =
             Just index == autocompleteIndex
@@ -268,16 +285,13 @@ displayItem selected autocompleteIndex index item =
             item.label
     in
     li
-        [ class "px-6 md:px-4 py-2 md:py-0"
-        , class "text-lg md:text-base font-normal"
-        , class "border border-transparent hover:bg-mt-blue-lightest cursor-pointer"
-        , class "truncate"
+        [ class "elm-search-item"
         , id <| "elm-search-index-" ++ String.fromInt index
         , classList
             [ ( "text-mt-purple", isSelected )
             , ( "bg-mt-purple-lighter", isHighlighted )
             , ( "text-mt-grey-dark", item.isSelectable )
-            , ( "text-mt-blue", not item.isSelectable )
+            , ( "elm-disabled", not item.isSelectable )
             ]
         , value item.id
         , onClickStopPropagation (Set (Select item))
@@ -289,6 +303,26 @@ displayItem selected autocompleteIndex index item =
         ]
 
 
+selectedView : Maybe (Item item) -> Html (Msg item)
+selectedView selected =
+    selected
+        |> Maybe.map
+            (\item ->
+                li
+                    [ class "elm-search-item"
+                    , class "elm-selected"
+                    , id <| "elm-search-selected"
+                    , onClickStopPropagation (Set (Deselect item))
+                    , attribute "data-role" "item-row"
+                    , title item.label
+                    ]
+                    [ span [ class "font-light" ] [ text item.label ]
+                    ]
+            )
+        |> Maybe.withDefault Html.Extra.nothing
+
+
+searchInputView : Model item -> Html (Msg item)
 searchInputView model =
     let
         records =
@@ -298,13 +332,14 @@ searchInputView model =
             msgForKeyboardEvent records model.autocompleteIndex
     in
     div
-        [ style "color" "red"
+        [ class "elm-search-input"
         ]
         [ Icons.Search.viewWithAttributes
-            [ Svg.Attributes.height "1.5rem" ]
+            [ Svg.Attributes.class "elm-icon" ]
         , input
-            [ type_ "text"
-            , id <| domId model.label
+            [ class "elm-search-text-input"
+            , type_ "text"
+            , id <| domInputId model.label
             , onInput (Set << SearchTerms)
             , value (model.search.terms |> Maybe.withDefault "")
             , placeholder <| "Select or search"
@@ -313,7 +348,7 @@ searchInputView model =
             ]
             []
         , Icons.CloseCross.viewWithAttributes
-            [ Svg.Attributes.height "1.5rem"
+            [ Svg.Attributes.class "elm-icon"
             , onClick (Set (Mode Closed))
             ]
         ]
@@ -398,6 +433,11 @@ type alias AutocompletePositionalDetails =
     { onFirst : Bool, onLast : Bool, noAutocompleteIndex : Bool }
 
 
+isOpen : Model item -> Bool
+isOpen model =
+    model.mode == Opened
+
+
 sendMsg : Msg item -> Cmd (Msg item)
 sendMsg msg =
     msg
@@ -410,6 +450,16 @@ isNothing mebe =
     mebe == Nothing
 
 
+focusSearch : String -> Cmd (Msg item)
+focusSearch label =
+    Browser.Dom.focus (domInputId label) |> Task.attempt (always NoOperation)
+
+
 domId : String -> String
 domId label =
+    "elm-search-" ++ label
+
+
+domInputId : String -> String
+domInputId label =
     "elm-select-search-" ++ label

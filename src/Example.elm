@@ -3,6 +3,7 @@ module Example exposing (Msg(..), main, update, view)
 import Browser
 import Html exposing (Html, button, div, text)
 import Html.Events exposing (onClick)
+import Html.Extra
 import RemoteData
 import Select exposing (Model, Msg(..), basicInit)
 
@@ -85,7 +86,7 @@ init =
     ( { counter = 0
       , users = fakeUsers
       , currentUser = luffy
-      , selectInput = basicInit SetUser "Users" 300 items Nothing toItem runSearch
+      , selectInput = basicInit SetUser "Users" 0 items Nothing toItem runSearch
       }
     , Cmd.none
     )
@@ -134,7 +135,7 @@ view : Model -> Html Msg
 view model =
     div []
         [ button [ onClick (SelectInput (Select.Set (Select.Mode Select.Opened))) ] [ text "Search Users" ]
-        , Select.view model.selectInput |> Html.map SelectInput
+        , Html.Extra.viewIf (Select.isOpen model.selectInput) (Select.view model.selectInput |> Html.map SelectInput)
         ]
 
 
