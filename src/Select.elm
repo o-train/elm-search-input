@@ -15,6 +15,15 @@ import Select.OnClickOutsideAfterFocus
 import Svg.Attributes
 import Task
 
+{-| Simple elm search input with debouncer
+
+This is in Alpha and is currently not intended for external use (yet).
+
+Currently working on stylings (elm-css or supply your own css)
+
+See a full example of the select input [here](https://gitlab.com/o-train/elm-search-input/-/blob/main/Example.elm)
+
+-}
 
 type Direction
     = Next
