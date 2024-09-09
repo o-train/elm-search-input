@@ -56,8 +56,9 @@ update : ...
 
 ## Roadmap
 - [ ] Refactor from initial quick one file write
-- [ ] Make it Beta (and better...)
+- [ ] Refactor inits using Builder pattern
 - [ ] Improve docs
+- [ ] Make it Beta (and better...)
 - [ ] Better example
 
 ## Contributing

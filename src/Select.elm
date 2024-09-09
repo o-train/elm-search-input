@@ -1,5 +1,26 @@
 module Select exposing (Item, Model, Msg(..), OpenState(..), Search, Setters(..), basicInit, isOpen, update, view)
 
+{-| simple elm search/select input with debouncer
+
+This is in Alpha and is currently not intended for external use (yet).
+
+Currently working on stylings (elm-css or supply your own css)
+
+See a full example of the select input [here](https://gitlab.com/o-train/elm-search-input/-/blob/main/examples/Example.elm)
+
+
+# Types
+
+@docs Item, Model, Msg, OpenState, Search, Setters
+
+# Configuration
+
+@docs basicInit
+
+# Usage
+@docs update, view, isOpen
+-}
+
 import Browser.Dom
 import Debouncer.Basic as Debouncer
 import Html exposing (..)
@@ -15,21 +36,15 @@ import Select.OnClickOutsideAfterFocus
 import Svg.Attributes
 import Task
 
-{-| Simple elm search input with debouncer
-
-This is in Alpha and is currently not intended for external use (yet).
-
-Currently working on stylings (elm-css or supply your own css)
-
-See a full example of the select input [here](https://gitlab.com/o-train/elm-search-input/-/blob/main/Example.elm)
-
--}
 
 type Direction
     = Next
     | Previous
 
 
+{-|
+  Dropdown open state
+-}
 type OpenState
     = Opened
     | Closed
@@ -44,6 +59,9 @@ type alias Filters =
     List Filter
 
 
+{-|
+  An item for selection
+-}
 type alias Item item =
     { id : String
     , label : String
@@ -56,6 +74,9 @@ type alias Items item =
     List (Item item)
 
 
+{-|
+  Select input's search configuration
+-}
 type alias Search item =
     { filters : Filters
     , terms : Maybe String
@@ -64,6 +85,9 @@ type alias Search item =
     }
 
 
+{-|
+  Select Input configuration model
+-}
 type alias Model item =
     { label : String
     , selected : Maybe (Item item)
@@ -71,6 +95,8 @@ type alias Model item =
     -- Search/Mappers
     -- Should be a Msg?
     , toItem : item -> Item item
+
+    -- 
     , runSearch : Search item -> ( Search item, Maybe (Msg item) )
 
     --  Config
@@ -92,6 +118,10 @@ type SearchType
     | Query
 
 
+
+{-|
+  Select Input messages
+-}
 type Msg item
     = Autocomplete
     | Set (Setters item)
@@ -101,6 +131,9 @@ type Msg item
     | NoOperation
 
 
+{-|
+  Select Input internal state setters
+-}
 type Setters item
     = Mode OpenState
     | Select (Item item)
@@ -122,6 +155,9 @@ updateSearchResults results search =
     { search | results = results }
 
 
+{-|
+  Update function in future it will have a third el to its tuple for synchronisation
+-}
 update : Msg a -> Model a -> ( Model a, Cmd (Msg a) )
 update msg model =
     case msg of
@@ -227,6 +263,9 @@ update msg model =
             ( model, Cmd.none )
 
 
+{-|
+  Display search input and results
+-}
 view : Model a -> Html (Msg a)
 view model =
     let
@@ -363,6 +402,9 @@ searchInputView model =
         ]
 
 
+{-|
+  Minimum model creation. This will be split out into 'RequiredModel' in future
+-}
 basicInit : msg -> String -> Int -> List (Item item) -> Maybe (Item item) -> (item -> Item item) -> (Search item -> ( Search item, Maybe (Msg item) )) -> Model item
 basicInit searchMsg label searchDebounceInterval baseItems selected toItem runSearch =
     { label = label
@@ -441,6 +483,10 @@ autocompleteIndexDetails currentIndex records =
 type alias AutocompletePositionalDetails =
     { onFirst : Bool, onLast : Bool, noAutocompleteIndex : Bool }
 
+
+{-|
+  Check if selector is open or not
+-}
 
 isOpen : Model item -> Bool
 isOpen model =
