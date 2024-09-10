@@ -1,0 +1,23 @@
+{
+  "name": "elm-search-select",
+  "version": "1.0.0",
+  "description": "Basic search input",
+  "main": "index.js",
+  "scripts": {
+    "test": "elm-test",
+    "format": "elm-format . --yes"
+  },
+  "devDependencies": {
+    "elm-format": "^0.8.7",
+    "elm-test": "^0.19.1-revision12"
+  },
+  "keywords": [
+    "elm",
+    "select",
+    "search",
+    "debouncer"
+  ],
+  "author": "o-train",
+  "license": "MIT",
+  "packageManager": "yarn@1.22.22+sha1.ac34549e6aa8e7ead463a7407e1c7390f61a6610"
+}
