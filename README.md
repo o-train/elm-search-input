@@ -5,7 +5,12 @@ Simple search input for use in Elm with debouncer capabilities.
 ## Description
 
 This is not intended for external use yet and the docs will be filled out in more detail when ready.
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+
+There are other options that may suit your needs better than this project:
+1. (elm-select)[https://package.elm-lang.org/packages/Confidenceman02/elm-select/11.1.0/)]. Stand alone + elm css
+2. (Elm Select)[https://github.com/sporto/elm-select]
+
+This package includes debouncing emission of input changes. Otherwise the other projects are more mature and (frankly) better written (twas written quickly for fun).
 
 ## Badges
 On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
