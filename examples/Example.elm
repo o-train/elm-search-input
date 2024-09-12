@@ -61,9 +61,6 @@ runSearch model =
 
                 Nothing ->
                     model.items
-
-        _ =
-            Debug.log "Run Search " items
     in
     ( { model | results = RemoteData.Success items }, Nothing )
 

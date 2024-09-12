@@ -1,4 +1,4 @@
-module Icons.CloseCross exposing (view, viewWithAttributes)
+module Select.Icons.CloseCross exposing (view, viewWithAttributes)
 
 import Html exposing (Html)
 import Svg exposing (..)

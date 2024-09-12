@@ -1,3 +1,34 @@
+:root {
+  --theme-color: #5b2eff;
+  --theme-hover-color: #c5c5f7;
+  --theme-icon-hover-color: #6633ff;
+  --mobile-navbar-height: 3rem;
+}
+
+.elm-search-input-container1 {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: calc(100vh - var(--mobile-navbar-height));
+}
+
+.elm-search-input-container2 {
+  position: absolute;
+  z-index: 50;
+  width: 100vw;
+  background-color: #ffffff;
+  height: calc(100vh - var(--mobile-navbar-height));
+}
+
+.elm-search-input-container2:focus-within {
+  border-color: var(--theme-color);
+}
+
+.arrow-up {
+  display: none;
+}
+
 .elm-search-input-container {
   overflow-y: scroll;
   z-index: 10;
@@ -39,26 +70,25 @@
   white-space: nowrap;
   cursor: pointer;
 }
-
-.elm-disabled {
-  background-color: #F9FAFB; 
+ta .elm-disabled {
+  background-color: #f9fafb;
 }
 
 .elm-selected {
-  background-color: #5b21b6;
+  color: var(--theme-color);
 }
 
 .elm-icon {
   margin-right: 0.75rem;
   width: 1.5rem;
   height: 1.5rem;
-  color: #8b5cf6;
+  color: var(--theme-color);
   cursor: pointer;
 }
 
 :hover.elm-search-item,
 :hover.elm-icon {
-  color: #5b21b6;
+  color: var(--theme-icon-hover-color);
 }
 
 @media (min-width: 640px) {
@@ -66,10 +96,48 @@
     max-width: 24rem;
   }
 }
+
 @media (min-width: 768px) {
+  .elm-search-input-container1 {
+    top: auto;
+    right: auto;
+    bottom: auto;
+    left: auto;
+    margin-top: -1rem;
+    width: auto;
+    height: auto;
+  }
+
+  .elm-search-input-container2 {
+    display: flex;
+    border-radius: 0.5rem;
+    border-width: 1px;
+    height: auto;
+    width: 32rem;
+    box-shadow:
+      0 1px 3px 0 rgba(0, 0, 0, 0.1),
+      0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  }
+
   .elm-search-input-container {
     padding-top: 0.75rem;
     margin-bottom: 0;
+    min-height: 20rem;
+    max-height: 23rem;
+  }
+
+  .arrow-up {
+    display: block;
+    margin-left: 2rem;
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-bottom: 5px solid var(--theme-color);
+  }
+
+  .elm-search-text-input {
+    width: 32rem;
   }
 
   .elm-search-input {

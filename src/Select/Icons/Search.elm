@@ -1,4 +1,4 @@
-module Icons.Search exposing (view, viewWithAttributes)
+module Select.Icons.Search exposing (view, viewWithAttributes)
 
 import Html exposing (Html)
 import Svg exposing (..)
