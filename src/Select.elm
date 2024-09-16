@@ -1,8 +1,7 @@
 module Select exposing
-    ( Item, Model, Msg(..), OpenState(..), Search, Setters(..)
+    ( Item, Model, Msg(..), OpenState(..), Search, Setters(..), Filter(..), ParentMsg(..), SearchQuery(..)
     , basicInit
-    , update, view, isOpen
-    , SearchQuery(..), setSearchQuery
+    , update, view, isOpen, setSearchQuery, addFilter
     )
 
 {-| simple elm search/select input with debouncer
@@ -16,7 +15,7 @@ See a full example of the select input [here](https://gitlab.com/o-train/elm-sea
 
 # Types
 
-@docs Item, Model, Msg, OpenState, Search, Setters
+@docs Item, Model, Msg, OpenState, Search, Setters, Filter, ParentMsg, SearchQuery
 
 
 # Configuration
@@ -26,7 +25,7 @@ See a full example of the select input [here](https://gitlab.com/o-train/elm-sea
 
 # Usage
 
-@docs update, view, isOpen
+@docs update, view, isOpen, setSearchQuery, addFilter
 
 -}
 
@@ -40,7 +39,7 @@ import Html.Extra
 import Http exposing (Header)
 import Json.Decode exposing (Decoder)
 import List.Extra
-import RemoteData exposing (RemoteData, WebData)
+import RemoteData exposing (WebData)
 import Select.Autocomplete exposing (Direction(..))
 import Select.AutocompleteLogic
 import Select.Icons.CloseCross
@@ -58,13 +57,19 @@ type OpenState
     | Closed
 
 
-type Filter
-    = Checkbox Bool
-    | TextBox String
+{-| Filter - bring your own with parent msg. Others to come.
+-}
+type Filter item msg
+    = CustomFilter (Html (Msg item msg))
 
 
-type alias Filters =
-    List Filter
+
+-- | Checkbox Bool
+-- | TextBox String
+
+
+type alias Filters item msg =
+    List (Filter item msg)
 
 
 {-| An item for selection
@@ -90,7 +95,7 @@ type alias Request item =
     }
 
 
-makeRequest : (item -> Item item) -> Request item -> Cmd (Msg item)
+makeRequest : (item -> Item item) -> Request item -> Cmd (Msg item msg)
 makeRequest toItemFn req =
     Http.request
         { url = req.url
@@ -104,8 +109,8 @@ makeRequest toItemFn req =
         }
 
 
-type alias CustomSearch item =
-    Search item -> ( Search item, Cmd (Msg item) )
+type alias CustomSearch item msg =
+    Search item msg -> ( Search item msg, Cmd (Msg item msg) )
 
 
 
@@ -119,26 +124,26 @@ type alias CustomSearch item =
   - CustomQuery -> As it sounds
 
 -}
-type SearchQuery item
+type SearchQuery item msg
     = BasicQuery
     | HttpQuery (Maybe String -> Request item)
-    | CustomQuery (CustomSearch item)
+    | CustomQuery (CustomSearch item msg)
 
 
 {-| Select input's search configuration
 -}
-type alias Search item =
-    { filters : Filters
+type alias Search item msg =
+    { filters : Filters item msg
     , terms : Maybe String
     , items : List (Item item)
     , results : WebData (Items item)
-    , query : SearchQuery item
+    , query : SearchQuery item msg
     }
 
 
 {-| Select Input configuration model
 -}
-type alias Model item =
+type alias Model item msg =
     { label : String
     , selected : Maybe (Item item)
 
@@ -147,11 +152,11 @@ type alias Model item =
     , toItem : item -> Item item
 
     --  Config
-    , search : Search item
+    , search : Search item msg
 
     --  Internal Config
     , mode : OpenState
-    , searchDebouncer : Debouncer.Debouncer (Msg item) (Msg item)
+    , searchDebouncer : Debouncer.Debouncer (Msg item msg) (Msg item msg)
     , autocompleteIndex : Maybe Int
 
     --  Advanced Config
@@ -162,76 +167,89 @@ type alias Model item =
 
 {-| Select Input messages
 -}
-type Msg item
+type Msg item msg
     = Autocomplete
     | Clear
-    | Set (Setters item)
+    | Set (Setters item msg)
     | RunSearch
-    | QueueSearch (Debouncer.Msg (Msg item))
+    | EmitMsg msg
+    | QueueSearch (Debouncer.Msg (Msg item msg))
     | NoOp
 
 
 {-| Select Input internal state setters
 -}
-type Setters item
+type Setters item msg
     = Mode OpenState
     | Select (Item item)
     | Deselect (Item item)
     | AutocompleteIndex Direction
     | SearchTerms String
     | SearchResults (WebData (Items item))
+    | SelectFilter (Filter item msg)
+
+
+{-| Return msgs for your application to respond to
+-}
+type ParentMsg item msg
+    = SelectedItem (Item item)
+    | ParentMsg msg
+    | NoChange
 
 
 
 -- | Filter Filter
 
 
+type alias Return item msg =
+    ( Model item msg, ParentMsg item msg, Cmd (Msg item msg) )
+
+
 {-| Update function in future it will have a third el to its tuple for synchronisation
 -}
-update : Msg a -> Model a -> ( Model a, Cmd (Msg a) )
+update : Msg item msg -> Model item msg -> Return item msg
 update msg model =
     case msg of
         Autocomplete ->
-            ( model
+            model
                 |> setAutocomplete
                 |> setClosed
-            , Cmd.none
-            )
+                |> returnSingleton
 
         Clear ->
-            ( model |> clear
-            , Cmd.none
-            )
+            model
+                |> clear
+                |> returnSingleton
 
         Set (Mode Closed) ->
-            ( model |> setClosed
-            , Cmd.none
-            )
+            model
+                |> setClosed
+                |> returnSingleton
 
         Set (Mode Opened) ->
-            ( model |> setMode Opened
-            , focusSearch model.label
-            )
+            model
+                |> setMode Opened
+                |> returnSingleton
+                |> returnCmd (focusSearch model.label)
 
         Set (Select item) ->
-            ( model
+            model
                 |> setSelected item
                 |> setClosed
-            , Cmd.none
-            )
+                |> returnSingleton
+                |> returnParentMsg (SelectedItem item)
 
         Set (Deselect item) ->
-            ( { model | selected = Nothing }
-            , Cmd.none
-            )
+            { model | selected = Nothing }
+                |> returnSingleton
 
         Set (AutocompleteIndex dir) ->
-            ( model |> navigateAutocompleteIndex dir
-            , Cmd.none
-              -- Scroll to be added. Best may be to just ensure that current el is within viewport of other el otherwise + el height. Or port to JS?
-              -- , autocompleteIndex |> Maybe.withDefault 9999 |> itemDomId |> scrollToEnd (domId model.label)
-            )
+            model
+                |> navigateAutocompleteIndex dir
+                |> returnSingleton
 
+        -- Scroll to be added. Best may be to just ensure that current el is within viewport of other el otherwise + el height. Or port to JS?
+        -- , autocompleteIndex |> Maybe.withDefault 9999 |> itemDomId |> scrollToEnd (domId model.label)
         Set (SearchTerms terms) ->
             let
                 sanitisedTerms =
@@ -257,21 +275,30 @@ update msg model =
                     else
                         Nothing
             in
-            ( model.search
+            model.search
                 |> setSearchTerms (Just terms)
                 |> setSearchResults RemoteData.NotAsked
                 |> flip setSearch model
                 |> setAutocompleteIndex autocompleteIndex
-            , cmd
-            )
+                |> returnSingleton
+                |> returnCmd cmd
 
         Set (SearchResults results) ->
-            ( results
+            results
                 |> RemoteData.map (List.filter <| not << isSelected model.selected)
                 |> flip setSearchResults model.search
                 |> flip setSearch model
-            , Cmd.none
-            )
+                |> returnSingleton
+
+        Set (SelectFilter filter) ->
+            model
+                |> returnSingleton
+
+        --  case filter  of
+        --      CustomFilter parentMsg ->
+        --        (model, Cmd.none)
+        EmitMsg parentMsg ->
+            ( model, ParentMsg parentMsg, Cmd.none )
 
         QueueSearch subMsg ->
             let
@@ -287,24 +314,26 @@ update msg model =
             case emittedMsg of
                 Just emitted ->
                     let
-                        ( m, c ) =
+                        ( m, parentMsg, c ) =
                             update emitted updatedModel
                     in
-                    ( m, Cmd.batch [ c, mappedCmd ] )
+                    ( m, parentMsg, Cmd.batch [ c, mappedCmd ] )
 
                 Nothing ->
-                    ( updatedModel, mappedCmd )
+                    ( updatedModel, NoChange, mappedCmd )
 
         RunSearch ->
-            searchItems model
+            model
+                |> searchItems
 
         NoOp ->
-            ( model, Cmd.none )
+            model
+                |> returnSingleton
 
 
 {-| Display search input and results
 -}
-view : Model a -> Html (Msg a)
+view : Model item msg -> Html (Msg item msg)
 view model =
     let
         items =
@@ -321,7 +350,7 @@ view model =
     in
     div
         (class "elm-search-input-container"
-          :: Select.OnClickOutsideAfterFocus.withId (domId model.label) (Set (Mode Closed))
+            :: Select.OnClickOutsideAfterFocus.withId (domId model.label) (Set (Mode Closed))
         )
         [ searchInputView model
         , selectedView model.selected
@@ -329,7 +358,7 @@ view model =
         ]
 
 
-itemsView : Int -> Maybe (Item item) -> WebData (Items item) -> Maybe Int -> Html (Msg item)
+itemsView : Int -> Maybe (Item item) -> WebData (Items item) -> Maybe Int -> Html (Msg item msg)
 itemsView min selected webdataItems autocompleteIndex =
     case webdataItems of
         RemoteData.NotAsked ->
@@ -358,7 +387,7 @@ itemsView min selected webdataItems autocompleteIndex =
                 ]
 
 
-itemView : Maybe (Item item) -> Maybe Int -> Int -> Item item -> Html (Msg item)
+itemView : Maybe (Item item) -> Maybe Int -> Int -> Item item -> Html (Msg item msg)
 itemView selected autocompleteIndex index item =
     let
         isHighlighted =
@@ -386,7 +415,7 @@ itemView selected autocompleteIndex index item =
         ]
 
 
-selectedView : Maybe (Item item) -> Html (Msg item)
+selectedView : Maybe (Item item) -> Html (Msg item msg)
 selectedView selected =
     selected
         |> Maybe.map
@@ -405,7 +434,7 @@ selectedView selected =
         |> Maybe.withDefault Html.Extra.nothing
 
 
-searchInputView : Model item -> Html (Msg item)
+searchInputView : Model item msg -> Html (Msg item msg)
 searchInputView model =
     let
         records =
@@ -417,9 +446,9 @@ searchInputView model =
     div
         [ class "elm-search-input"
         ]
-        [ Select.Icons.Search.viewWithAttributes
+        ([ Select.Icons.Search.viewWithAttributes
             [ Svg.Attributes.class "elm-icon" ]
-        , input
+         , input
             [ class "elm-search-text-input"
             , type_ "text"
             , id <| domInputId model.label
@@ -430,16 +459,42 @@ searchInputView model =
             , Select.KeyShortcutEvents.on msgEvents
             ]
             []
-        , Select.Icons.CloseCross.viewWithAttributes
-            [ Svg.Attributes.class "elm-icon"
-            , onClick Clear
+         ]
+            ++ filtersView model.search
+        )
+
+
+filtersView : Search item msg -> List (Html (Msg item msg))
+filtersView search =
+    let
+        ( closeTitle, closeMsg ) =
+            if search.terms == Nothing || search.terms == Just "" then
+                ( "Close Search", Set (Mode Closed) )
+
+            else
+                ( "Clear", Clear )
+    in
+    search.filters
+        |> List.map filterView
+        |> flip List.append
+            [ Select.Icons.CloseCross.viewWithAttributes
+                [ Svg.Attributes.class "elm-icon"
+                , title closeTitle
+                , onClick closeMsg
+                ]
             ]
-        ]
+
+
+filterView : Filter item msg -> Html (Msg item msg)
+filterView filter =
+    case filter of
+        CustomFilter v ->
+            v
 
 
 {-| Minimum model creation. This will be split out into 'RequiredModel' in future
 -}
-basicInit : String -> Int -> List (Item item) -> Maybe (Item item) -> (item -> Item item) -> SearchQuery item -> Model item
+basicInit : String -> Int -> List (Item item) -> Maybe (Item item) -> (item -> Item item) -> SearchQuery item msg -> Model item msg
 basicInit label searchDebounceInterval baseItems selected toItem searchQuery =
     { label = label
     , selected = selected
@@ -465,7 +520,7 @@ basicInit label searchDebounceInterval baseItems selected toItem searchQuery =
 --  NOTE: Could be split out
 
 
-msgForKeyboardEvent : Items a -> Maybe Int -> List ( String, Msg a )
+msgForKeyboardEvent : Items item -> Maybe Int -> List ( String, Msg item msg )
 msgForKeyboardEvent records autocompleteIndex =
     let
         { onFirst, onLast, noAutocompleteIndex } =
@@ -520,12 +575,12 @@ type alias AutocompletePositionalDetails =
 
 {-| Check if selector is open or not
 -}
-isOpen : Model item -> Bool
+isOpen : Model item msg -> Bool
 isOpen model =
     model.mode == Opened
 
 
-sendMsg : Msg item -> Cmd (Msg item)
+sendMsg : Msg item msg -> Cmd (Msg item msg)
 sendMsg msg =
     msg
         |> Task.succeed
@@ -537,7 +592,7 @@ isNothing mebe =
     mebe == Nothing
 
 
-focusSearch : String -> Cmd (Msg item)
+focusSearch : String -> Cmd (Msg item msg)
 focusSearch label =
     Browser.Dom.focus (domInputId label) |> Task.attempt (always NoOp)
 
@@ -552,7 +607,7 @@ domInputId label =
     "elm-select-search-" ++ label
 
 
-searchItems : Model item -> ( Model item, Cmd (Msg item) )
+searchItems : Model item msg -> Return item msg
 searchItems model =
     let
         ( search, cmd ) =
@@ -566,10 +621,10 @@ searchItems model =
                 CustomQuery customSearch ->
                     customSearch model.search
     in
-    ( { model | search = search }, cmd )
+    ( { model | search = search }, NoChange, cmd )
 
 
-basicSearch : Maybe (Item item) -> Search item -> Search item
+basicSearch : Maybe (Item item) -> Search item msg -> Search item msg
 basicSearch selected model =
     let
         anyMatch description term =
@@ -607,7 +662,7 @@ isSelected selected item =
     Just item.id == (selected |> Maybe.map .id)
 
 
-scrollToEnd : String -> String -> Cmd (Msg item)
+scrollToEnd : String -> String -> Cmd (Msg item msg)
 scrollToEnd parentId id =
     Task.map3
         (\outerVp outerE innerE ->
@@ -641,11 +696,30 @@ itemDomId index =
     "elm-search-index-" ++ String.fromInt index
 
 
+returnSingleton : Model item msg -> Return item msg
+returnSingleton model =
+    ( model, NoChange, Cmd.none )
 
--- Setters
+
+returnCmd : Cmd (Msg item msg) -> Return item msg -> Return item msg
+returnCmd cmd return =
+    case return of
+        ( m, p, c ) ->
+            ( m, p, Cmd.batch [ c, cmd ] )
 
 
-setAutocomplete : Model item -> Model item
+returnParentMsg : ParentMsg item msg -> Return item msg -> Return item msg
+returnParentMsg parentMsg return =
+    case return of
+        ( m, _, c ) ->
+            ( m, parentMsg, c )
+
+
+
+-- Internal and External Setters
+
+
+setAutocomplete : Model item msg -> Model item msg
 setAutocomplete model =
     model.autocompleteIndex
         |> Maybe.andThen (flip List.Extra.getAt (RemoteData.withDefault [] model.search.results))
@@ -653,31 +727,31 @@ setAutocomplete model =
         |> Maybe.withDefault model
 
 
-setAutocompleteIndex : Maybe Int -> Model item -> Model item
+setAutocompleteIndex : Maybe Int -> Model item msg -> Model item msg
 setAutocompleteIndex autocompleteIndex model =
     { model | autocompleteIndex = autocompleteIndex }
 
 
-navigateAutocompleteIndex : Direction -> Model item -> Model item
+navigateAutocompleteIndex : Direction -> Model item msg -> Model item msg
 navigateAutocompleteIndex dir model =
     model.autocompleteIndex
         |> Select.AutocompleteLogic.changeStep dir
         |> flip setAutocompleteIndex model
 
 
-setSelected : Item item -> Model item -> Model item
+setSelected : Item item -> Model item msg -> Model item msg
 setSelected item model =
     { model | selected = Just item }
 
 
-setClosed : Model item -> Model item
+setClosed : Model item msg -> Model item msg
 setClosed model =
     model
         |> clear
         |> setMode Closed
 
 
-clear : Model item -> Model item
+clear : Model item msg -> Model item msg
 clear model =
     model.search
         |> setSearchTerms Nothing
@@ -685,32 +759,35 @@ clear model =
         |> flip setSearch model
 
 
-setSearch : Search item -> Model item -> Model item
+setSearch : Search item msg -> Model item msg -> Model item msg
 setSearch search model =
     { model | search = search }
 
 
-
--- Not used atm
-
-
-setSearchQuery : SearchQuery item -> Model item -> Model item
+{-| Add a SearchQuery for usage when search input changes
+-}
+setSearchQuery : SearchQuery item msg -> Model item msg -> Model item msg
 setSearchQuery query ({ search } as model) =
     { search | query = query }
         |> flip setSearch model
 
 
-setSearchTerms : Maybe String -> Search item -> Search item
+setSearchTerms : Maybe String -> Search item msg -> Search item msg
 setSearchTerms terms search =
     { search | terms = terms }
 
 
-setSearchResults : WebData (Items item) -> Search item -> Search item
+setSearchResults : WebData (Items item) -> Search item msg -> Search item msg
 setSearchResults results search =
     { search | results = results }
 
 
-setMode : OpenState -> Model item -> Model item
+setFilters : Filters item msg -> Search item msg -> Search item msg
+setFilters filters search =
+    { search | filters = filters }
+
+
+setMode : OpenState -> Model item msg -> Model item msg
 setMode mode model =
     { model | mode = mode }
 
@@ -718,3 +795,20 @@ setMode mode model =
 flip : (a -> b -> c) -> b -> a -> c
 flip fn a b =
     fn b a
+
+
+
+-- Init Config Setters
+
+
+{-| Initialise select input with a filter
+example
+basicInit yourArgs
+|> addFilter (Select.CustomFilter yourView)
+-}
+addFilter : Filter item msg -> Model item msg -> Model item msg
+addFilter filter model =
+    filter
+        :: model.search.filters
+        |> flip setFilters model.search
+        |> flip setSearch model
