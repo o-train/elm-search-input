@@ -1,10 +1,10 @@
 module Select exposing
     ( Item, Model, Msg(..), OpenState(..), Search, Setters(..), Filter(..), ParentMsg(..), SearchQuery(..)
-    , basicInit
-    , update, view, isOpen, setSearchQuery, addFilter
+    , init, addFilter, addSearchQuery, addDebounceInterval, addItems, addSelectedItem, addClearButton, addMaxSearchResults, addMinSearchTerms
+    , update, view, isOpen
     )
 
-{-| simple elm search/select input with debouncer
+{-| Simple elm search/select input with debouncer
 
 This is in Alpha and is currently not intended for external use (yet).
 
@@ -20,12 +20,12 @@ See a full example of the select input [here](https://gitlab.com/o-train/elm-sea
 
 # Configuration
 
-@docs basicInit
+@docs init, addFilter, addSearchQuery, addDebounceInterval, addItems, addSelectedItem, addClearButton, addMaxSearchResults, addMinSearchTerms
 
 
 # Usage
 
-@docs update, view, isOpen, setSearchQuery, addFilter
+@docs update, view, isOpen
 
 -}
 
@@ -138,6 +138,7 @@ type alias Search item msg =
     , items : List (Item item)
     , results : WebData (Items item)
     , query : SearchQuery item msg
+    , debouncer : Debouncer.Debouncer (Msg item msg) (Msg item msg)
     }
 
 
@@ -156,12 +157,12 @@ type alias Model item msg =
 
     --  Internal Config
     , mode : OpenState
-    , searchDebouncer : Debouncer.Debouncer (Msg item msg) (Msg item msg)
     , autocompleteIndex : Maybe Int
 
     --  Advanced Config
-    , allowMultipleFilters : Bool
     , minimumSearchTermsLength : Int
+    , maximumSearchResults : Maybe Int
+    , showClearButton : Bool
     }
 
 
@@ -303,13 +304,13 @@ update msg model =
         QueueSearch subMsg ->
             let
                 ( debouncedModel, subCmd, emittedMsg ) =
-                    Debouncer.update subMsg model.searchDebouncer
+                    Debouncer.update subMsg model.search.debouncer
 
                 mappedCmd =
                     Cmd.map QueueSearch subCmd
 
                 updatedModel =
-                    { model | searchDebouncer = debouncedModel }
+                    setDebouncer debouncedModel model
             in
             case emittedMsg of
                 Just emitted ->
@@ -490,30 +491,6 @@ filterView filter =
     case filter of
         CustomFilter v ->
             v
-
-
-{-| Minimum model creation. This will be split out into 'RequiredModel' in future
--}
-basicInit : String -> Int -> List (Item item) -> Maybe (Item item) -> (item -> Item item) -> SearchQuery item msg -> Model item msg
-basicInit label searchDebounceInterval baseItems selected toItem searchQuery =
-    { label = label
-    , selected = selected
-    , toItem = toItem
-    , search =
-        { filters = []
-        , terms = Nothing
-        , items = baseItems
-        , results = RemoteData.NotAsked
-        , query = searchQuery
-        }
-
-    --  Internal Config
-    , mode = Closed
-    , searchDebouncer = Debouncer.toDebouncer (Debouncer.debounce searchDebounceInterval)
-    , autocompleteIndex = Nothing
-    , allowMultipleFilters = True
-    , minimumSearchTermsLength = 0
-    }
 
 
 
@@ -716,7 +693,7 @@ returnParentMsg parentMsg return =
 
 
 
--- Internal and External Setters
+-- Internal Setters
 
 
 setAutocomplete : Model item msg -> Model item msg
@@ -744,6 +721,12 @@ setSelected item model =
     { model | selected = Just item }
 
 
+setDebouncer : Debouncer.Debouncer (Msg item msg) (Msg item msg) -> Model item msg -> Model item msg
+setDebouncer debouncer ({ search } as model) =
+    { search | debouncer = debouncer }
+        |> flip setSearch model
+
+
 setClosed : Model item msg -> Model item msg
 setClosed model =
     model
@@ -762,14 +745,6 @@ clear model =
 setSearch : Search item msg -> Model item msg -> Model item msg
 setSearch search model =
     { model | search = search }
-
-
-{-| Add a SearchQuery for usage when search input changes
--}
-setSearchQuery : SearchQuery item msg -> Model item msg -> Model item msg
-setSearchQuery query ({ search } as model) =
-    { search | query = query }
-        |> flip setSearch model
 
 
 setSearchTerms : Maybe String -> Search item msg -> Search item msg
@@ -798,13 +773,43 @@ flip fn a b =
 
 
 
--- Init Config Setters
+-- Config Set up
+
+
+{-| Minimum model creation. This will be split out into 'RequiredModel' in future
+-}
+init : String -> (item -> Item item) -> Model item msg
+init label toItem =
+    { label = label
+    , selected = Nothing
+    , toItem = toItem
+    , search =
+        { filters = []
+        , terms = Nothing
+        , items = []
+        , results = RemoteData.NotAsked
+        , query = BasicQuery
+        , debouncer = Debouncer.toDebouncer (Debouncer.debounce 0)
+        }
+
+    --  Internal Config
+    , mode = Closed
+    , autocompleteIndex = Nothing
+    , minimumSearchTermsLength = 0
+    , maximumSearchResults = Nothing
+    , showClearButton = True
+    }
+
+
+
+-- Public Initialisers
 
 
 {-| Initialise select input with a filter
-example
-basicInit yourArgs
-|> addFilter (Select.CustomFilter yourView)
+
+      basicInit yourArgs
+      |> addFilter (Select.CustomFilter yourView)
+
 -}
 addFilter : Filter item msg -> Model item msg -> Model item msg
 addFilter filter model =
@@ -812,3 +817,57 @@ addFilter filter model =
         :: model.search.filters
         |> flip setFilters model.search
         |> flip setSearch model
+
+
+{-| Add a SearchQuery for usage when search input changes
+-}
+addSearchQuery : SearchQuery item msg -> Model item msg -> Model item msg
+addSearchQuery query ({ search } as model) =
+    { search | query = query }
+        |> flip setSearch model
+
+
+{-| Add a SearchQuery for usage when search input changes
+-}
+addDebounceInterval : Int -> Model item msg -> Model item msg
+addDebounceInterval debounceInterval model =
+    setDebouncer (Debouncer.toDebouncer (Debouncer.debounce debounceInterval)) model
+
+
+{-| Add initial list of items
+-}
+addItems : List (Item item) -> Model item msg -> Model item msg
+addItems items ({ search } as model) =
+    { search | items = items }
+        |> flip setSearch model
+
+
+{-| Add initially selected item
+-}
+addSelectedItem : Item item -> Model item msg -> Model item msg
+addSelectedItem =
+    setSelected
+
+
+{-| Config change to display (or not) the clear button.
+Default is True
+-}
+addClearButton : Bool -> Model item msg -> Model item msg
+addClearButton bool model =
+    { model | showClearButton = bool }
+
+
+{-| Config change to min length of search terms
+Default is 0
+-}
+addMaxSearchResults : Maybe Int -> Model item msg -> Model item msg
+addMaxSearchResults max model =
+    { model | maximumSearchResults = max }
+
+
+{-| Config change to min search results before running query
+Default is 0
+-}
+addMinSearchTerms : Int -> Model item msg -> Model item msg
+addMinSearchTerms min model =
+    { model | minimumSearchTermsLength = min }
