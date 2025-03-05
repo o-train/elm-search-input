@@ -45,7 +45,7 @@ import Select.AutocompleteLogic
 import Select.Icons.CloseCross
 import Select.Icons.Search
 import Select.KeyShortcutEvents
-import Select.OnClickOutsideAfterFocus
+import Select.OnClickOutsideAfterFocus as OnClickOutsideAfterFocus
 import Svg.Attributes
 import Task
 
@@ -351,7 +351,7 @@ view model =
     in
     div
         (class "elm-search-input-container"
-            :: Select.OnClickOutsideAfterFocus.withId (domId model.label) (Set (Mode Closed))
+            :: OnClickOutsideAfterFocus.withId (domId model.label) (Set (Mode Closed))
         )
         [ searchInputView model
         , selectedView model.selected
@@ -375,6 +375,12 @@ itemsView min selected webdataItems autocompleteIndex =
             span [ class "px-4 text-grey" ] [ text "No results matching terms..." ]
 
         RemoteData.Success items ->
+            let
+                selectableItems =
+                    items
+                        |> List.filter (not << isSelected selected)
+                        |> List.indexedMap (itemView autocompleteIndex)
+            in
             div
                 [ class "max-w-lg"
                 , attribute "data-role" "items-list"
@@ -384,12 +390,12 @@ itemsView min selected webdataItems autocompleteIndex =
                     [ id "select-item-for-"
                     , class "p-0 m-0 text-mt-grey-dark"
                     ]
-                    (List.indexedMap (itemView selected autocompleteIndex) items)
+                    selectableItems
                 ]
 
 
-itemView : Maybe (Item item) -> Maybe Int -> Int -> Item item -> Html (Msg item msg)
-itemView selected autocompleteIndex index item =
+itemView : Maybe Int -> Int -> Item item -> Html (Msg item msg)
+itemView autocompleteIndex index item =
     let
         isHighlighted =
             Just index == autocompleteIndex
@@ -401,8 +407,7 @@ itemView selected autocompleteIndex index item =
         [ class "elm-search-item"
         , id <| itemDomId index
         , classList
-            [ ( "text-mt-purple", isSelected selected item )
-            , ( "bg-mt-purple-lighter", isHighlighted )
+            [ ( "bg-mt-purple-lighter", isHighlighted )
             , ( "text-mt-grey-dark", item.isSelectable )
             , ( "elm-disabled", not item.isSelectable )
             ]
@@ -425,11 +430,15 @@ selectedView selected =
                     [ class "elm-search-item"
                     , class "elm-selected"
                     , id <| "elm-search-selected"
-                    , onClickStopPropagation (Set (Deselect item))
                     , attribute "data-role" "item-row"
-                    , title item.label
+                    , title <| item.label ++ " - click to deselect"
+                    , onClickStopPropagation (Set (Deselect item))
                     ]
-                    [ span [ class "font-light" ] [ text item.label ]
+                    [ div [ class "font-semibold" ] [ text item.label ]
+                    , Select.Icons.CloseCross.viewWithAttributes
+                        [ Svg.Attributes.class "elm-icon-deselect"
+                        , title "Click to deselect"
+                        ]
                     ]
             )
         |> Maybe.withDefault Html.Extra.nothing
@@ -593,7 +602,11 @@ searchItems model =
                     ( basicSearch model.selected model.search, Cmd.none )
 
                 HttpQuery req ->
-                    ( model.search, makeRequest model.toItem (req model.search.terms) )
+                    let
+                        updatedModel =
+                            model.search |> setSearchResults RemoteData.Loading
+                    in
+                    ( updatedModel, makeRequest model.toItem (req model.search.terms) )
 
                 CustomQuery customSearch ->
                     customSearch model.search
@@ -734,6 +747,11 @@ setClosed model =
         |> setMode Closed
 
 
+close : Model item msg -> Model item msg
+close model =
+    model |> setClosed
+
+
 clear : Model item msg -> Model item msg
 clear model =
     model.search
@@ -799,6 +817,20 @@ init label toItem =
     , maximumSearchResults = Nothing
     , showClearButton = True
     }
+
+
+
+-- Public functions
+
+
+open : Cmd (Msg item msg)
+open =
+    sendMsg (Set (Mode Opened))
+
+
+closed : Cmd (Msg item msg)
+closed =
+    sendMsg (Set (Mode Closed))
 
 
 
